@@ -1,43 +1,79 @@
 from typing import Annotated, List
 from io import BytesIO
 import pandas as pd
+from sqlalchemy import select, exists
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
+from tqdm import tqdm
 
 from settings import Settings, get_settings
 from database import get_db
-from models import Dataset
+from models import Dataset, Column
 
 
 router = APIRouter(prefix="/datasets")
 
 
 def get_dataset_name_from_filename(filename: str):
-    return (
-        f"{filename}_raw".replace("-", "_").replace(".", "_").replace(" ", "_").lower()
-    )
+    if filename[0].isnumeric():
+        filename = f"_{filename}"
+    filename = filename.strip(".csv").lower()
+    filename = filename.replace("-", "_").replace(".", "_").replace(" ", "_")
+    return filename
 
 
-def create_raw_dataset_from_csv(content, filename: str, db: Session):
+def get_dataset_exists(db: Session, filename: str):
+    dataset_name = get_dataset_name_from_filename(filename)
+    query = select(exists().where(Dataset.name == dataset_name))
+    dataset = db.execute(query).scalar()
+    return dataset
+
+
+def create_raw_dataset_from_csv(content, filename: str, db: Session, nrows=20000):
     content_io = BytesIO(content)
     df = pd.read_csv(content_io)
 
-    filename_raw = get_dataset_name_from_filename(filename)
-    df.to_sql(filename_raw, db.connection(), if_exists="replace", index=False)
+    df.columns = df.columns.str.lower()
+    df.columns = [col if len(col) <= 50 else col[:50] for col in df.columns]
+    no_duplicate_cols = set()
+    for col in df.columns:
+        if col not in no_duplicate_cols:
+            no_duplicate_cols.add(col)
+        else:
+            i = 1
+            while f"{col}_{i}" in no_duplicate_cols:
+                i += 1
+            no_duplicate_cols.add(f"{col}_{i}")
+    df.columns = no_duplicate_cols
 
-    dataset = RawDataset(name=filename_raw, size=len(content), num_rows=len(df))
+    filename = get_dataset_name_from_filename(filename)
+
+    if nrows:
+        if df.shape[0] > nrows:
+            df = df.sample(nrows)
+    df.to_sql(filename, db.connection(), if_exists="replace", index=False)
+
+    dataset = Dataset(name=filename, size=len(content), num_rows=len(df))
     db.add(dataset)
     db.commit()
+    db.refresh(dataset)
+    
+    column_names = df.columns
+    for column_name in column_names:
+        column = Column(name=column_name, dataset_id=dataset.id)
+        db.add(column)
 
-    return filename_raw
+    db.commit()
+
+    return filename
 
 
-def get_open_dataset_ids():
+def get_open_dataset_ids(limit: int = None, offset: int = 0):
     base_url = "https://ckan0.cf.opendata.inter.prod-toronto.ca"
     url = f"{base_url}/api/3/action/package_list"
 
-    response = httpx.get(url)
+    response = httpx.get(url, params={"limit": limit, "offset": offset})
     response.raise_for_status()
 
     data = response.json()
@@ -62,9 +98,18 @@ def fetch_open_dataset(id: str, settings: Settings, db: Session):
 
         url = resource["url"]
         response = httpx.get(url)
-        response.raise_for_status()
+        if response.status_code != 200:
+            print(f"Error getting details for dataset: {url}")
+            continue
 
         filename = resource["name"]
+        if len(filename) > 50:
+            filename = filename[:50]
+
+        if get_dataset_exists(db, filename):
+            print(f"Dataset already exists: {filename}")
+            continue
+
         content = response.content
 
         try:
@@ -75,6 +120,7 @@ def fetch_open_dataset(id: str, settings: Settings, db: Session):
             continue
 
         filenames.append(filename_raw)
+        break
     return filenames
 
 
@@ -83,7 +129,8 @@ def read_datasets(
     settings: Annotated[Settings, Depends(get_settings)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    datasets = db.query(Dataset).all()
+    query = select(Dataset)
+    datasets = db.execute(query).scalars().all()
     return datasets
 
 
@@ -93,7 +140,8 @@ def read_dataset(
     settings: Annotated[Settings, Depends(get_settings)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    dataset = db.query(Dataset).filter(Dataset.name == name).first()
+    query = select(Dataset).where(Dataset.name == name)
+    dataset = db.execute(query).scalars().first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
@@ -112,21 +160,21 @@ def crawl_datasets(
     db: Annotated[Session, Depends(get_db)],
     download: bool = False,
     limit: int = 10,
+    offset: int = 0,
 ):
-    ids = get_open_dataset_ids()
-
-    if limit:
-        if len(ids) > limit:
-            ids = ids[:limit]
+    ids = get_open_dataset_ids(limit, offset)
 
     if not download:
-        return {"count": len(ids), "ids": ids}
+        return {"found": {"count": len(ids), "ids": ids}}
 
     filenames = []
-    for id in ids:
+    for id in tqdm(ids):
         filenames += fetch_open_dataset(id, settings, db)
 
-    return {"count": len(filenames), "filenames": filenames}
+    return {
+        "found": {"count": len(ids), "ids": ids},
+        "downloaded": {"count": len(filenames), "filenames": filenames},
+    }
 
 
 @router.post("/open/{id}")
