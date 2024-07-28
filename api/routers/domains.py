@@ -49,7 +49,8 @@ def get_domain_examples(db: Session, domain_id: int):
         samples = filter(None, samples)
         examples.extend(samples)
     if len(examples) > 100:
-        examples = np.random.choice(examples, 100).tolist()
+        examples = np.random.choice(examples, 100)
+    examples = np.array(examples).astype(str)
     examples = list(set(examples))
     return examples
 

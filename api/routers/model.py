@@ -1,7 +1,7 @@
 from typing import Annotated, List
 from io import BytesIO
 import pandas as pd
-from sqlalchemy import select, update, delete, exists
+from sqlalchemy import select, update, delete, exists, null
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
@@ -40,8 +40,9 @@ def create_domains(db: Session, column_ids, clusters):
     query = delete(Domain)
     db.execute(query)
 
-    query = update(Column).where(Column.id.in_(column_ids)).values(domain_id=None)
+    query = update(Column).values(domain_id=null())
     db.execute(query)
+    db.commit()
 
     cluster_counts = pd.Series(clusters).value_counts()
     all_domains = cluster_counts[cluster_counts > 1].index.unique()
