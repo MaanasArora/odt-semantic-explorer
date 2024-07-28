@@ -15,10 +15,6 @@ from models import Dataset, Column, Domain
 router = APIRouter(prefix="/domains")
 
 
-class DomainView(BaseModel):
-    id: int
-
-
 class DatasetView(BaseModel):
     id: int
     name: str
@@ -29,8 +25,12 @@ class ColumnView(BaseModel):
     name: str
 
 
-class DomainWithExamples(DomainView):
+class DomainView(BaseModel):
+    id: int
     columns: List[ColumnView]
+
+
+class DomainWithExamples(DomainView):
     examples: List
 
 
