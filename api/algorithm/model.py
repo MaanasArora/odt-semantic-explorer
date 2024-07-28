@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import HDBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 import networkx as nx
 
@@ -20,7 +20,7 @@ def preprocess_column(col, nospace=False):
 
 
 def compute_similarity_matrix(X, alpha=0.5):
-    batch_size = 20
+    batch_size = 50
     n = X.shape[0]
 
     sizes = np.sqrt(X.power(2).sum(axis=1) + 1)
@@ -36,7 +36,6 @@ def compute_similarity_matrix(X, alpha=0.5):
         sim[i:j] *= weight[i:j]
 
     sim[np.isnan(sim)] = 0
-    print(sim.mean(), sim.std(), sim.min(), sim.max())
     return sim
 
 
@@ -52,18 +51,16 @@ def fit_model(columns):
     vectorizer = TfidfVectorizer(token_pattern=r"\S+")
 
     X_space = vectorizer.fit_transform(tqdm(columns_space, total=num_columns))
-    sim_space = compute_similarity_matrix(X_space)
+    sim_space = compute_similarity_matrix(X_space, alpha=0.3)
 
     X_nospace = vectorizer.fit_transform(tqdm(columns_nospace, total=num_columns))
-    sim_nospace = compute_similarity_matrix(X_nospace)
+    sim_nospace = compute_similarity_matrix(X_nospace, alpha=0.6)
 
     sim = (sim_space + sim_nospace) / 2
     X = 1 - sim
 
     print("Clustering")
-    model = AgglomerativeClustering(
-        n_clusters=None, metric="precomputed", linkage="single", distance_threshold=0.45
-    )
+    model = HDBSCAN(min_cluster_size=2, metric="precomputed")
     clusters = model.fit_predict(X)
 
     end = time()

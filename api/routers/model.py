@@ -25,7 +25,9 @@ def get_column_data(db: Session):
         df = pd.read_sql_table(table_name, db.connection())
         df = df.dropna(axis=1, how="all")
         for col in df.columns:
-            query = select(Column).where(Column.name == col)
+            query = select(Column).where(
+                Column.name == col, Column.dataset_id == raw_dataset.id
+            )
             column = db.execute(query).scalar()
             if column is None:
                 column = Column(name=col, dataset_id=raw_dataset.id)
@@ -44,16 +46,12 @@ def create_domains(db: Session, column_ids, clusters):
     db.execute(query)
     db.commit()
 
-    cluster_counts = pd.Series(clusters).value_counts()
-    all_domains = cluster_counts[cluster_counts > 1].index.unique()
-    
+    all_domains = list(set(clusters))
     for domain in all_domains:
         domain = Domain(id=domain)
         db.add(domain)
 
     for column_id, cluster in zip(column_ids, clusters):
-        if cluster not in all_domains:
-            continue
         query = update(Column).where(Column.id == column_id).values(domain_id=cluster)
         db.execute(query)
 
