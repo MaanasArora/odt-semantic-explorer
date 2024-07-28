@@ -15,7 +15,7 @@ from tqdm import tqdm
 def preprocess_column(col, nospace=False):
     col = col.fillna("").astype(str).str.lower()
     if nospace:
-        col = col.str.replace(" ", "_")
+        col = [" ".join(sorted(set(x.split()))) for x in col]
     return " ".join(col)
 
 
