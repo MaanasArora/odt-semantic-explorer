@@ -60,7 +60,12 @@ def fit_model(columns):
     X = 1 - sim
 
     print("Clustering")
-    model = HDBSCAN(min_cluster_size=2, metric="precomputed")
+    model = HDBSCAN(
+        min_cluster_size=2,
+        metric="precomputed",
+        cluster_selection_method="leaf",
+        cluster_selection_epsilon=0.25,
+    )
     clusters = model.fit_predict(X)
 
     end = time()
