@@ -124,7 +124,7 @@ def fetch_open_dataset(id: str, settings: Settings, db: Session):
     return filenames
 
 
-@router.get("/")
+@router.get("")
 def read_datasets(
     settings: Annotated[Settings, Depends(get_settings)],
     db: Annotated[Session, Depends(get_db)],

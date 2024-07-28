@@ -55,7 +55,7 @@ def get_domain_examples(db: Session, domain_id: int):
     return examples
 
 
-@router.get("/", response_model=List[DomainView])
+@router.get("", response_model=List[DomainView])
 def get_domains(db: Annotated[Session, Depends(get_db)]):
     query = select(Domain)
     domains = db.execute(query).scalars().all()
