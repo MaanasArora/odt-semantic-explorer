@@ -30,21 +30,21 @@ def get_dataset_exists(db: Session, filename: str):
     return dataset
 
 
-def create_raw_dataset_from_csv(content, filename: str, db: Session, nrows=20000):
+def create_raw_dataset_from_csv(content, filename: str, db: Session, nrows=50000):
     content_io = BytesIO(content)
     df = pd.read_csv(content_io)
 
     df.columns = df.columns.str.lower()
     df.columns = [col if len(col) <= 50 else col[:50] for col in df.columns]
-    no_duplicate_cols = set()
+    no_duplicate_cols = []
     for col in df.columns:
         if col not in no_duplicate_cols:
-            no_duplicate_cols.add(col)
+            no_duplicate_cols.append(col)
         else:
             i = 1
             while f"{col}_{i}" in no_duplicate_cols:
                 i += 1
-            no_duplicate_cols.add(f"{col}_{i}")
+            no_duplicate_cols.append(f"{col}_{i}")
     df.columns = no_duplicate_cols
 
     filename = get_dataset_name_from_filename(filename)
